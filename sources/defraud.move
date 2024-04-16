@@ -3,10 +3,11 @@ module budget_tracking::budget_tracking {
     // Imports
     use sui::transfer;
     use sui::sui::SUI;
-    use sui::coin::{Self, Coin};
-    use sui::object::{Self, UID};
-    use sui::balance::{Self, Balance};
-    use sui::tx_context::{Self, TxContext};
+    use sui::coin::{Self as Coin, Coin};
+    use sui::object::{Self as Obj, UID};
+    use sui::balance::{Self as Bal, Balance};
+    use sui::tx_context::{Self as TxCtx, TxContext};
+    use sui::address::{Self as Addr, Address};
 
     // Errors
     const ENotEnough: u64 = 0;
@@ -16,11 +17,11 @@ module budget_tracking::budget_tracking {
     const ENotOwner: u64 = 4;
 
     // Struct definitions
-    struct BudgetManager has key { id:UID }
+    struct BudgetManager has key { id: UID }
 
     struct ExpenseTracking has key, store {
         id: UID,                            // Transaction object ID
-        owner_address: address,             // Owner address
+        owner_address: Address,             // Owner address
         bank_transac_id: u64,               // Bank Transaction ID
         police_claim_id: u64,               // Police claim ID
 
@@ -34,8 +35,8 @@ module budget_tracking::budget_tracking {
     // Module initializer
     fun init(ctx: &mut TxContext) {
         transfer::transfer(BudgetManager {
-            id: object::new(ctx),
-        }, tx_context::sender(ctx))
+            id: Obj::new(ctx),
+        }, TxCtx::sender(ctx))
     }
 
     // Accessors
@@ -43,8 +44,8 @@ module budget_tracking::budget_tracking {
         expense.bank_transac_id
     }
 
-    public entry fun amount(expense: &ExpenseTracking, ctx: &mut TxContext): u64 {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
+    public entry fun amount(expense: &ExpenseTracking, ctx: &mut TxContext) -> u64 {
+        assert!(expense.owner_address != TxCtx::sender(ctx), ENotOwner);
         expense.amount
     }
 
@@ -53,7 +54,7 @@ module budget_tracking::budget_tracking {
     }
 
     public entry fun is_refunded(expense: &ExpenseTracking): u64 {
-        balance::value(&expense.refund)
+        Bal::value(&expense.refund)
     }
 
     public entry fun bank_has_validated(expense: &ExpenseTracking): bool {
@@ -61,67 +62,88 @@ module budget_tracking::budget_tracking {
     }
 
     // Public - Entry functions
-    public entry fun record_expense(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) {
+    public entry fun record_expense(tr_id: u64, claim_id: u64, amount: u64, ctx: &mut TxContext) {
         transfer::share_object(ExpenseTracking {
-            owner_address: tx_context::sender(ctx),
-            id: object::new(ctx),
+            owner_address: TxCtx::sender(ctx),
+            id: Obj::new(ctx),
             bank_transac_id: tr_id,
             police_claim_id: claim_id,
             amount: amount,
-            refund: balance::zero(),
+            refund: Bal::zero(),
             retailer_is_pending: false,
             bank_validation: false
         });
     }
 
-    public entry fun create_budget_manager(_: &BudgetManager, bank_address: address, ctx: &mut TxContext) {
-        // No need for ctx parameter as it's not used
+    public entry fun create_budget_manager(_: &BudgetManager, bank_address: Address, ctx: &mut TxContext) {
         transfer::transfer(BudgetManager {
-            id: object::new(ctx), // Initialize with a placeholder value, actual ID will be assigned during execution
+            id: Obj::new(ctx), // Initialize with a placeholder value, actual ID will be assigned during execution
         }, bank_address);
     }
 
     public entry fun edit_claim_id(expense: &mut ExpenseTracking, claim_id: u64, ctx: &mut TxContext) {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
+        assert!(expense.owner_address != TxCtx::sender(ctx), ENotOwner);
         assert!(expense.retailer_is_pending, ERetailerPending);
         expense.police_claim_id = claim_id;
     }
 
-    public entry fun refund(expense: &mut ExpenseTracking, funds: &mut Coin<SUI>) {
-        assert!(coin::value(funds) >= expense.amount, ENotEnough);
+    public entry fun refund(expense: &mut ExpenseTracking, funds: &mut Coin<SUI>, ctx: &mut TxContext) {
+        assert!(Coin::value(funds) >= expense.amount, ENotEnough);
         assert!(expense.police_claim_id == 0, EUndeclaredClaim);
 
-        let coin_balance = coin::balance_mut(funds);
-        let paid = balance::split(coin_balance, expense.amount);
+        let coin_balance = Coin::balance_mut(funds);
+        let paid = Bal::split(coin_balance, expense.amount);
 
-        balance::join(&mut expense.refund, paid);
+        Bal::join(&mut expense.refund, paid);
     }
 
     public entry fun validate_with_bank(_: &BudgetManager, expense: &mut ExpenseTracking) {
         expense.bank_validation = true;
     }
 
-    public entry fun claim_from_retailer(expense: &mut ExpenseTracking, retailer_address: address, ctx: &mut TxContext) {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
+    public entry fun claim_from_retailer(expense: &mut ExpenseTracking, retailer_address: Address, ctx: &mut TxContext) {
+        assert!(expense.owner_address != TxCtx::sender(ctx), ENotOwner);
         assert!(expense.police_claim_id == 0, EUndeclaredClaim);
 
         // Transfer the balance
-        let amount = balance::value(&expense.refund);
-        let refund = coin::take(&mut expense.refund, amount, ctx);
-        transfer::public_transfer(refund, tx_context::sender(ctx));
+        let amount = Bal::value(&expense.refund);
+        let refund = Coin::take(&mut expense.refund, amount, ctx);
+        transfer::public_transfer(refund, retailer_address);
 
         // Transfer the ownership
         expense.owner_address = retailer_address;
     }
 
     public entry fun claim_from_bank(expense: &mut ExpenseTracking, ctx: &mut TxContext) {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
+        assert!(expense.owner_address != TxCtx::sender(ctx), ENotOwner);
         assert!(expense.retailer_is_pending, ERetailerPending);
-        assert!(expense.bank_validation == false, ENotValidatedByBank);
+        assert!(!expense.bank_validation, ENotValidatedByBank);
 
         // Transfer the balance
-        let amount = balance::value(&expense.refund);
-        let refund = coin::take(&mut expense.refund, amount, ctx);
-        transfer::public_transfer(refund, tx_context::sender(ctx));
+        let amount = Bal::value(&expense.refund);
+        let refund = Coin::take(&mut expense.refund, amount, ctx);
+        transfer::public_transfer(refund, TxCtx::sender(ctx));
+    }
+
+    // New functionality: Mark expense as pending refund by retailer
+    public entry fun mark_retailer_pending(expense: &mut ExpenseTracking, ctx: &mut TxContext) {
+        assert!(expense.owner_address == TxCtx::sender(ctx), ENotOwner);
+        expense.retailer_is_pending = true;
+    }
+
+    // New functionality: Check if expense is pending refund by retailer
+    public entry fun is_retailer_pending(expense: &ExpenseTracking): bool {
+        expense.retailer_is_pending
+    }
+
+    // New functionality: Check if expense is claimed by police
+    public entry fun is_police_claimed(expense: &ExpenseTracking): bool {
+        expense.police_claim_id != 0
+    }
+
+    // New functionality: Set bank transaction ID
+    public entry fun set_bank_transac_id(expense: &mut ExpenseTracking, tr_id: u64, ctx: &mut TxContext) {
+        assert!(expense.owner_address == TxCtx::sender(ctx), ENotOwner);
+        expense.bank_transac_id = tr_id;
     }
 }
