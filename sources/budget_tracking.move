@@ -1,4 +1,4 @@
-module budget_tracking::budget_tracking {
+module defraud::budget_tracking {
 
     // Imports
     use sui::transfer;
