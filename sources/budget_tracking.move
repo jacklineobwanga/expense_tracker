@@ -32,15 +32,8 @@ module defraud::budget_tracking {
         bank_validation: bool,              // True if the bank has validated the fraud
     }
 
-    // Module initializer
-    fun init(ctx: &mut TxContext) {
-        transfer::transfer(BudgetManager {
-            id: object::new(ctx),
-            owner: sender(ctx)
-        }, tx_context::sender(ctx))
-    }
+   // === Public-Mutative Functions ===
 
-    // Accessors
     public entry fun bank_transac_id(_: &BudgetManager, expense: &ExpenseTracking): u64 {
         expense.bank_transac_id
     }
@@ -63,7 +56,7 @@ module defraud::budget_tracking {
     }
 
     // Public - Entry functions
-    public entry fun record_expense(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) : BudgetManager {
+    public fun record_expense(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) : BudgetManager {
         let id_ = object::new(ctx);
         let inner_ = object::uid_to_inner(&id_);
         // share the object 
@@ -83,21 +76,19 @@ module defraud::budget_tracking {
         };
         cap
     }
-    
-    public entry fun edit_claim_id(self: &mut ExpenseTracking, claim_id: u64, ctx: &mut TxContext) {
-        assert!(self.owner_address != tx_context::sender(ctx), ENotOwner);
+
+    public entry fun edit_claim_id(cap: &BudgetManager, self: &mut ExpenseTracking, claim_id: u64) {
+        assert!(cap.expense == object::id(self), ENotOwner);
         assert!(self.retailer_is_pending, ERetailerPending);
         self.police_claim_id = claim_id;
     }
 
-    public entry fun refund(expense: &mut ExpenseTracking, funds: &mut Coin<SUI>) {
-        assert!(coin::value(funds) >= expense.amount, ENotEnough);
+    public entry fun refund(expense: &mut ExpenseTracking, coin: Coin<SUI>) {
+        assert!(coin::value(&coin) == expense.amount, ENotEnough);
         assert!(expense.police_claim_id == 0, EUndeclaredClaim);
 
-        let coin_balance = coin::balance_mut(funds);
-        let paid = balance::split(coin_balance, expense.amount);
-
-        balance::join(&mut expense.refund, paid);
+        let balance_ = coin::into_balance(coin);
+        balance::join(&mut expense.refund, balance_);
     }
 
     public entry fun validate_with_bank(_: &BudgetManager, expense: &mut ExpenseTracking) {
