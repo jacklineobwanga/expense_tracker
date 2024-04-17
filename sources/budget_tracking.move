@@ -16,7 +16,7 @@ module defraud::budget_tracking {
     const ENotOwner: u64 = 4;
 
     // Struct definitions
-    struct BudgetManager has key { id:UID }
+    struct BudgetManager has key { id:UID, owner: address }
 
     struct ExpenseTracking has key, store {
         id: UID,                            // Transaction object ID
@@ -35,6 +35,7 @@ module defraud::budget_tracking {
     fun init(ctx: &mut TxContext) {
         transfer::transfer(BudgetManager {
             id: object::new(ctx),
+            owner: sender(ctx)
         }, tx_context::sender(ctx))
     }
 
@@ -73,12 +74,12 @@ module defraud::budget_tracking {
             bank_validation: false
         });
     }
-
-    public entry fun create_budget_manager(_: &BudgetManager, bank_address: address, ctx: &mut TxContext) {
-        // No need for ctx parameter as it's not used
+    // only protocol can create new BudgetManager
+    public entry fun create_budget_manager(cap: &BudgetManager, address_: address, ctx: &mut TxContext) {
+        assert!(cap.owner == sender(ctx), ENotOwner);
         transfer::transfer(BudgetManager {
             id: object::new(ctx), // Initialize with a placeholder value, actual ID will be assigned during execution
-        }, bank_address);
+        }, address_);
     }
 
     public entry fun edit_claim_id(expense: &mut ExpenseTracking, claim_id: u64, ctx: &mut TxContext) {
