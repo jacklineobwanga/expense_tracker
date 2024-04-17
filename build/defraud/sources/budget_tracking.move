@@ -91,31 +91,33 @@ module defraud::budget_tracking {
         balance::join(&mut expense.refund, balance_);
     }
 
-    public entry fun validate_with_bank(_: &BudgetManager, expense: &mut ExpenseTracking) {
-        expense.bank_validation = true;
+    public entry fun validate_with_bank(cap: &BudgetManager, self: &mut ExpenseTracking) {
+        assert!(cap.expense == object::id(self), ENotOwner);
+        self.bank_validation = true;
     }
 
-    public entry fun claim_from_retailer(expense: &mut ExpenseTracking, retailer_address: address, ctx: &mut TxContext) {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
-        assert!(expense.police_claim_id == 0, EUndeclaredClaim);
+    public entry fun claim_from_retailer(cap: BudgetManager, self: &mut ExpenseTracking, address_: address, ctx: &mut TxContext) {
+        assert!(cap.expense == object::id(self), ENotOwner);
+        assert!(self.police_claim_id == 0, EUndeclaredClaim);
 
         // Transfer the balance
-        let amount = balance::value(&expense.refund);
-        let refund = coin::take(&mut expense.refund, amount, ctx);
+        let amount = balance::value(&self.refund);
+        let refund = coin::take(&mut self.refund, amount, ctx);
         transfer::public_transfer(refund, tx_context::sender(ctx));
 
         // Transfer the ownership
-        expense.owner_address = retailer_address;
+        self.owner_address = address_;
+        transfer::transfer(cap, address_);
     }
 
-    public entry fun claim_from_bank(expense: &mut ExpenseTracking, ctx: &mut TxContext) {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
-        assert!(expense.retailer_is_pending, ERetailerPending);
-        assert!(expense.bank_validation == false, ENotValidatedByBank);
+    public entry fun claim_from_bank(cap: &BudgetManager, self: &mut ExpenseTracking, ctx: &mut TxContext) {
+        assert!(cap.expense == object::id(self), ENotOwner);
+        assert!(self.retailer_is_pending, ERetailerPending);
+        assert!(self.bank_validation == false, ENotValidatedByBank);
 
         // Transfer the balance
-        let amount = balance::value(&expense.refund);
-        let refund = coin::take(&mut expense.refund, amount, ctx);
+        let amount = balance::value(&self.refund);
+        let refund = coin::take(&mut self.refund, amount, ctx);
         transfer::public_transfer(refund, tx_context::sender(ctx));
     }
 }
