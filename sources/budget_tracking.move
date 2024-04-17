@@ -4,7 +4,7 @@ module defraud::budget_tracking {
     use sui::transfer;
     use sui::sui::SUI;
     use sui::coin::{Self, Coin};
-    use sui::object::{Self, UID};
+    use sui::object::{Self, UID, ID};
     use sui::balance::{Self, Balance};
     use sui::tx_context::{Self, TxContext};
 
@@ -16,18 +16,19 @@ module defraud::budget_tracking {
     const ENotOwner: u64 = 4;
 
     // Struct definitions
-    struct BudgetManager has key { id:UID, owner: address }
+    struct BudgetManager has key {
+        id:UID,
+        expense: ID
+    }
 
     struct ExpenseTracking has key, store {
         id: UID,                            // Transaction object ID
         owner_address: address,             // Owner address
         bank_transac_id: u64,               // Bank Transaction ID
         police_claim_id: u64,               // Police claim ID
-
         amount: u64,                        // Transaction amount
         refund: Balance<SUI>,               // SUI Balance
         retailer_is_pending: bool,          // True if the retailer has refunded the customer
-
         bank_validation: bool,              // True if the bank has validated the fraud
     }
 
@@ -62,10 +63,13 @@ module defraud::budget_tracking {
     }
 
     // Public - Entry functions
-    public entry fun record_expense(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) {
+    public entry fun record_expense(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) : BudgetManager {
+        let id_ = object::new(ctx);
+        let inner_ = object::uid_to_inner(&id_);
+        // share the object 
         transfer::share_object(ExpenseTracking {
+            id: id_,
             owner_address: tx_context::sender(ctx),
-            id: object::new(ctx),
             bank_transac_id: tr_id,
             police_claim_id: claim_id,
             amount: amount,
@@ -73,19 +77,17 @@ module defraud::budget_tracking {
             retailer_is_pending: false,
             bank_validation: false
         });
+        let cap = BudgetManager{
+            id: object::new(ctx),
+            expense: inner_
+        };
+        cap
     }
-    // only protocol can create new BudgetManager
-    public entry fun create_budget_manager(cap: &BudgetManager, address_: address, ctx: &mut TxContext) {
-        assert!(cap.owner == sender(ctx), ENotOwner);
-        transfer::transfer(BudgetManager {
-            id: object::new(ctx), // Initialize with a placeholder value, actual ID will be assigned during execution
-        }, address_);
-    }
-
-    public entry fun edit_claim_id(expense: &mut ExpenseTracking, claim_id: u64, ctx: &mut TxContext) {
-        assert!(expense.owner_address != tx_context::sender(ctx), ENotOwner);
-        assert!(expense.retailer_is_pending, ERetailerPending);
-        expense.police_claim_id = claim_id;
+    
+    public entry fun edit_claim_id(self: &mut ExpenseTracking, claim_id: u64, ctx: &mut TxContext) {
+        assert!(self.owner_address != tx_context::sender(ctx), ENotOwner);
+        assert!(self.retailer_is_pending, ERetailerPending);
+        self.police_claim_id = claim_id;
     }
 
     public entry fun refund(expense: &mut ExpenseTracking, funds: &mut Coin<SUI>) {
