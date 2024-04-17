@@ -6,7 +6,9 @@ module defraud::budget_tracking {
     use sui::coin::{Self, Coin};
     use sui::object::{Self, UID, ID};
     use sui::balance::{Self, Balance};
-    use sui::tx_context::{Self, TxContext};
+    use sui::tx_context::{Self, TxContext, sender};
+
+    use std::option::{Self, Option};
 
     // Errors
     const ENotEnough: u64 = 0;
@@ -29,6 +31,7 @@ module defraud::budget_tracking {
         amount: u64,                        // Transaction amount
         refund: Balance<SUI>,               // SUI Balance
         retailer_is_pending: bool,          // True if the retailer has refunded the customer
+        retailer: Option<address>,         
         bank_validation: bool,              // True if the bank has validated the fraud
     }
 
@@ -56,7 +59,7 @@ module defraud::budget_tracking {
     }
 
     // Public - Entry functions
-    public fun record_expense(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) : BudgetManager {
+    public fun new(tr_id: u64, claim_id:u64, amount: u64, ctx: &mut TxContext) : BudgetManager {
         let id_ = object::new(ctx);
         let inner_ = object::uid_to_inner(&id_);
         // share the object 
@@ -68,6 +71,7 @@ module defraud::budget_tracking {
             amount: amount,
             refund: balance::zero(),
             retailer_is_pending: false,
+            retailer: option::none(),
             bank_validation: false
         });
         let cap = BudgetManager{
@@ -96,7 +100,11 @@ module defraud::budget_tracking {
         self.bank_validation = true;
     }
 
-    public entry fun claim_from_retailer(cap: BudgetManager, self: &mut ExpenseTracking, address_: address, ctx: &mut TxContext) {
+    public fun get_retail(self: &mut ExpenseTracking, ctx: &mut TxContext) {
+        option::fill(&mut self.retailer, sender(ctx));
+    }
+
+    public entry fun claim_from_retailer(cap: BudgetManager, self: &mut ExpenseTracking, ctx: &mut TxContext) {
         assert!(cap.expense == object::id(self), ENotOwner);
         assert!(self.police_claim_id == 0, EUndeclaredClaim);
 
@@ -106,8 +114,7 @@ module defraud::budget_tracking {
         transfer::public_transfer(refund, tx_context::sender(ctx));
 
         // Transfer the ownership
-        self.owner_address = address_;
-        transfer::transfer(cap, address_);
+        transfer::transfer(cap, *option::borrow(&self.retailer));
     }
 
     public entry fun claim_from_bank(cap: &BudgetManager, self: &mut ExpenseTracking, ctx: &mut TxContext) {
@@ -121,7 +128,7 @@ module defraud::budget_tracking {
         transfer::public_transfer(refund, tx_context::sender(ctx));
     }
 
-    public fun set_retailer_pending(cap: &BudgetManager, self: &mut ExpenseTracking, ctx: &mut TxContext) {
+    public fun set_retailer_pending(cap: &BudgetManager, self: &mut ExpenseTracking) {
         assert!(cap.expense == object::id(self), ENotOwner);
         self.retailer_is_pending = true;
     }
