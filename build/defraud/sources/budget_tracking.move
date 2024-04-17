@@ -83,12 +83,12 @@ module defraud::budget_tracking {
         self.police_claim_id = claim_id;
     }
 
-    public entry fun refund(expense: &mut ExpenseTracking, coin: Coin<SUI>) {
-        assert!(coin::value(&coin) == expense.amount, ENotEnough);
-        assert!(expense.police_claim_id == 0, EUndeclaredClaim);
+    public entry fun deposit(self: &mut ExpenseTracking, coin: Coin<SUI>) {
+        assert!(coin::value(&coin) == self.amount, ENotEnough);
+        assert!(self.police_claim_id == 0, EUndeclaredClaim);
 
         let balance_ = coin::into_balance(coin);
-        balance::join(&mut expense.refund, balance_);
+        balance::join(&mut self.refund, balance_);
     }
 
     public entry fun validate_with_bank(cap: &BudgetManager, self: &mut ExpenseTracking) {

@@ -83,12 +83,12 @@ module defraud::budget_tracking {
         self.police_claim_id = claim_id;
     }
 
-    public entry fun refund(expense: &mut ExpenseTracking, coin: Coin<SUI>) {
-        assert!(coin::value(&coin) == expense.amount, ENotEnough);
-        assert!(expense.police_claim_id == 0, EUndeclaredClaim);
+    public entry fun deposit(self: &mut ExpenseTracking, coin: Coin<SUI>) {
+        assert!(coin::value(&coin) == self.amount, ENotEnough);
+        assert!(self.police_claim_id == 0, EUndeclaredClaim);
 
         let balance_ = coin::into_balance(coin);
-        balance::join(&mut expense.refund, balance_);
+        balance::join(&mut self.refund, balance_);
     }
 
     public entry fun validate_with_bank(cap: &BudgetManager, self: &mut ExpenseTracking) {
@@ -119,5 +119,10 @@ module defraud::budget_tracking {
         let amount = balance::value(&self.refund);
         let refund = coin::take(&mut self.refund, amount, ctx);
         transfer::public_transfer(refund, tx_context::sender(ctx));
+    }
+
+    public fun set_retailer_pending(cap: &BudgetManager, self: &mut ExpenseTracking, ctx: &mut TxContext) {
+        assert!(cap.expense == object::id(self), ENotOwner);
+        self.retailer_is_pending = true;
     }
 }
